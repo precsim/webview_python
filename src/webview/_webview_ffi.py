@@ -8,6 +8,7 @@ from ctypes import c_int, c_char_p, c_void_p, CFUNCTYPE
 import ctypes.util
 import shutil
 import logging
+import enum
 def _encode_c_string(s: str) -> bytes:
     return s.encode("utf-8")
 
@@ -129,6 +130,11 @@ def _be_sure_libraries():
     
     return lib_paths
 
+class WebviewNativeHandleKind(enum.IntEnum):
+	UI_WINDOW = 0  # Top-level OS window (HWND / NSWindow / GtkWindow)
+	UI_WIDGET = 1  # WebView widget/control — use this for MoveWindow/resize
+	BROWSER_CONTROLLER = 2  # Underlying browser object (ICoreWebView2 / WKWebView etc.)
+    
 class _WebviewLibrary:
     def __init__(self):
         lib_names=_get_lib_names()
@@ -142,10 +148,23 @@ class _WebviewLibrary:
             print(f"Failed to load webview library: {e}")
             raise
         # Define FFI functions
+        
+        # webview_create(int debug, void* window) -> webview_t
+	    # Pass window=None for a standalone window (existing behaviour),
+	    # or pass winfo_id() from a Tkinter widget to embed
         self.webview_create = self.lib.webview_create
         self.webview_create.argtypes = [c_int, c_void_p]
         self.webview_create.restype = c_void_p
 
+        # webview_get_native_handle(webview_t w, webview_native_handle_kind_t kind)
+	    # Returns a platform-specific native handle:
+	    #   Windows  → HWND        (use with ctypes.windll.User32.MoveWindow)
+	    #   Linux    → GtkWidget*  (use with gtk_widget_size_allocate via libgtk ctypes)
+	    #   macOS    → NSView*     (use with NSView.setFrame_ via pyobjc)
+	    self.webview_get_native_handle = self.lib.webview_get_native_handle
+	    self.webview_get_native_handle.argtypes = [c_void_p, c_int]
+	    self.webview_get_native_handle.restype = c_void_p
+        
         self.webview_destroy = self.lib.webview_destroy
         self.webview_destroy.argtypes = [c_void_p]
 
@@ -181,4 +200,4 @@ class _WebviewLibrary:
 
         self.CFUNCTYPE = CFUNCTYPE
 
-_webview_lib = _WebviewLibrary()
+    _webview_lib = _WebviewLibrary()
