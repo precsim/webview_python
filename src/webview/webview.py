@@ -4,7 +4,7 @@ import json
 import ctypes
 import asyncio
 import inspect
-from ._webview_ffi import _webview_lib, _encode_c_string
+from ._webview_ffi import _webview_lib, _encode_c_string, WebviewNativeHandleKind
 
 class SizeHint(IntEnum):
     NONE = 0
@@ -43,6 +43,9 @@ class Webview:
     def title(self, value: str):
         _webview_lib.webview_set_title(self._handle, _encode_c_string(value))
         self._title = value
+        
+    def get_native_handle(self, kind: WebviewNativeHandleKind) -> int:
+        return _webview_lib.webview_get_native_handle(self._handle, int(kind))
 
     def destroy(self):
         for name in list(self._callbacks.keys()):
