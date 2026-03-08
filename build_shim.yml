@@ -1,0 +1,104 @@
+name: Build resize shim
+
+on:
+  push:
+    paths:
+      - 'src/webview/webview_resize_shim.cpp'
+      - '.github/workflows/build_shim.yml'
+  workflow_dispatch:  # allow manual trigger
+
+jobs:
+
+  # ── Windows ────────────────────────────────────────────────────────────────
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build with MinGW (no MSVC licence needed)
+        run: |
+          g++ -shared -o src/webview/webview_resize_shim.dll `
+              src/webview/webview_resize_shim.cpp `
+              -luser32 -static-libgcc -static-libstdc++
+        shell: pwsh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shim-windows
+          path: src/webview/webview_resize_shim.dll
+
+  # ── Linux ──────────────────────────────────────────────────────────────────
+  # On Linux there is no shim needed (pure Python ctypes via libgtk-3),
+  # but if you want a .so for consistency or future use, here it is.
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GTK dev headers (for Option B if needed later)
+        run: sudo apt-get install -y libgtk-3-dev
+
+      - name: Build .so
+        run: |
+          g++ -shared -fPIC -o src/webview/webview_resize_shim.so \
+              src/webview/webview_resize_shim.cpp \
+              -lX11 -static-libgcc -static-libstdc++
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shim-linux
+          path: src/webview/webview_resize_shim.so
+
+  # ── macOS ──────────────────────────────────────────────────────────────────
+  # On macOS there is no shim needed (pure Python pyobjc),
+  # but here for completeness.
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build .dylib
+        run: |
+          g++ -shared -o src/webview/webview_resize_shim.dylib \
+              src/webview/webview_resize_shim.cpp \
+              -framework AppKit
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shim-macos
+          path: src/webview/webview_resize_shim.dylib
+
+  # ── Bundle all shims into a single release artifact ───────────────────────
+  bundle:
+    needs: [build-windows, build-linux, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all shims
+        uses: actions/download-artifact@v4
+        with:
+          path: shims/
+
+      - name: Show collected shims
+        run: find shims/
+
+      - name: Copy shims into package
+        run: |
+          cp shims/shim-windows/webview_resize_shim.dll src/webview/
+          cp shims/shim-linux/webview_resize_shim.so    src/webview/
+          cp shims/shim-macos/webview_resize_shim.dylib src/webview/
+
+      - name: Build Python wheel (includes shims)
+        run: |
+          pip install build
+          python -m build --wheel
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel
+          path: dist/*.whl
